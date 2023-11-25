@@ -1,0 +1,112 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+#define PIN_TRIG 26
+#define PIN_ECHO 25
+#define LOWLED   18
+#define MIDLED   19
+#define HIGHLED  21
+#define MOTOR    27
+
+char SSIDName[] = "Wokwi-GUEST";
+char SSIDPass[] = "";
+
+const char *mqtt_server = "broker.hivemq.com";
+const char *mqtt_username = "";
+const char *mqtt_password = "";
+const char *mqtt_clientId = "clientId-Pv5Tdhzbup";
+int BrokerPort = 1883;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+unsigned int level = 0;
+
+void setup() {
+  Serial.begin(9600);
+  Serial.print("Conectando-se ao Wi-Fi");
+  WiFi.begin(SSIDName, SSIDPass);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.println("Conectado!");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+
+  pinMode(LOWLED, OUTPUT);
+  pinMode(MIDLED, OUTPUT);
+  pinMode(HIGHLED, OUTPUT);
+  pinMode(MOTOR, OUTPUT);
+  digitalWrite(LOWLED, HIGH);
+  digitalWrite(MIDLED, HIGH);
+  digitalWrite(HIGHLED, HIGH);
+  digitalWrite(MOTOR, HIGH);
+
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+
+  // Inicializa a conexão MQTT
+  client.setServer(mqtt_server, BrokerPort);
+  client.setCallback(callback);
+  reconnect();
+}
+
+void loop() {
+  // Reconecta ao servidor MQTT se necessário
+  if (!client.connected()) {
+    reconnect();
+  }
+
+ 
+
+  // Leitura do sensor e envio dos dados MQTT
+  digitalWrite(PIN_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_TRIG, LOW);
+
+  int duration = pulseIn(PIN_ECHO, HIGH);
+
+  level = duration / 58;
+
+  if (level < 100) {
+    Serial.print("Ponto Crítico!! Distância: ");
+    Serial.println(duration / 58);
+  }
+
+  else{
+    Serial.print("Situação Estável, distância atual:  ");
+    Serial.println(duration / 58);
+
+  }
+
+  // Publica a leitura no tópico MQTT
+  char topic[50];
+  snprintf(topic, sizeof(topic), "ESP32/WControl-Eric");
+  char payload[1000];
+  snprintf(payload, sizeof(payload), "%d", level);
+  client.publish(topic, payload);
+
+  delay(1000);
+}
+
+void callback(char *topic, byte *payload, unsigned int length) {
+  // Função de retorno de chamada para processar mensagens MQTT recebidas
+  Serial.println("Mensagem MQTT recebida");
+}
+
+void reconnect() {
+  // Função para reconectar ao servidor MQTT
+  while (!client.connected()) {
+    Serial.print("Tentando se reconectar ao MQTT...");
+    if (client.connect(mqtt_clientId, mqtt_username, mqtt_password)) {
+      Serial.println("Conectado!");
+    } else {
+      Serial.print("Falha, rc=");
+      Serial.print(client.state());
+      Serial.println(" Tentando novamente em 5 segundos...");
+      delay(5000);
+    }
+  }
+}
